@@ -199,6 +199,9 @@ public:
     offset_t m_iHealingAssist_Resource;
     offset_t m_iPlayerLevel_Resource;
 
+    offset_t m_nFlagType;
+    offset_t m_nFlagStatus;
+
     offset_t m_iPlayerIndex;
 };
 

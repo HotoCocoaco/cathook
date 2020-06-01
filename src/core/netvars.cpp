@@ -115,6 +115,10 @@ void NetVars::Init()
         this->m_flTeleYawToExit               = gNetvars.get_offset("DT_ObjectTeleporter", "m_flYawToExit");
         this->m_bMatchBuilding                = gNetvars.get_offset("DT_ObjectTeleporter", "m_bMatchBuilding");
 
+        // CTF Flag
+        this->m_nFlagType   = gNetvars.get_offset("DT_CaptureFlag", "m_nType");
+        this->m_nFlagStatus = gNetvars.get_offset("DT_CaptureFlag", "m_nFlagStatus");
+
         this->m_DmgRadius                   = gNetvars.get_offset("DT_BaseGrenade", "m_DmgRadius");
         this->iPipeType                     = gNetvars.get_offset("DT_TFProjectile_Pipebomb", "m_iType");
         this->iBuildingHealth               = gNetvars.get_offset("DT_BaseObject", "m_iHealth");

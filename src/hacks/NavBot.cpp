@@ -8,12 +8,14 @@
 #include "Misc.hpp"
 #include "MiscTemporary.hpp"
 #include "teamroundtimer.hpp"
+#include "flagcontroller.hpp"
 
 namespace hacks::tf2::NavBot
 {
 // -Rvars-
 static settings::Boolean enabled("navbot.enabled", "false");
 static settings::Boolean stay_near("navbot.stay-near", "true");
+static settings::Boolean cap_mode("navbot.cap-mode", "false");
 static settings::Boolean heavy_mode("navbot.other-mode", "false");
 static settings::Boolean spy_mode("navbot.spy-mode", "false");
 static settings::Boolean engineer_mode("navbot.engineer-mode", "false");
@@ -28,6 +30,7 @@ bool init(bool first_cm);
 static bool navToSniperSpot();
 static bool navToBuildingSpot();
 static bool stayNear();
+static bool captureObjectives();
 static bool stayNearEngineer();
 static bool getDispenserHealthAndAmmo(int metal = -1);
 static bool getHealthAndAmmo(int metal = -1);
@@ -213,6 +216,10 @@ static void CreateMove()
         if (current_task == task::stay_near)
             return;
     }
+    // Try to cap points/intels
+    if (cap_mode)
+        if (captureObjectives())
+            return;
     // Try to stay near enemies to increase efficiency
     if ((stay_near || heavy_mode) && !spy_mode)
         if (stayNear())
@@ -966,6 +973,69 @@ static bool stayNearEngineer()
 
     return false;
 }
+
+// Main Cap function
+static bool captureObjectives()
+{
+    // Only repath every now and then
+    static Timer repath_timer;
+
+    int team       = g_pLocalPlayer->team;
+    int enemy_team = g_pLocalPlayer->team == TEAM_BLU ? TEAM_RED : TEAM_BLU;
+    // Get Flag related information
+    auto status   = flagcontroller::getStatus(enemy_team);
+    auto position = flagcontroller::getPosition(enemy_team);
+    auto carrier  = flagcontroller::getCarrier(enemy_team);
+
+    // Invalid flag
+    if (!position)
+        return false;
+
+    // Is the capture task running? If so then wait a bit before repathing
+    if (current_task == task::capture)
+    {
+        // Only update once in a while
+        if (!repath_timer.test_and_set(1000))
+            return true;
+    }
+
+    // Flag is stolen
+    if (status == TF_FLAGINFO_STOLEN)
+    {
+        // We have the flag, just run to the spawn position of ours to cap
+        if (carrier == LOCAL_E)
+        {
+            auto our_flag = flagcontroller::getFlag(team);
+
+            // Navigate
+            if (our_flag.spawn_pos && nav::navTo(*our_flag.spawn_pos, 7, true, false))
+            {
+                current_task = task::capture;
+                return true;
+            }
+        }
+    }
+    // Flag is at their home or dropped
+    else
+    {
+        // Get the flag
+        if (nav::navTo(*position, 7, true, false))
+        {
+            current_task = task::capture;
+            return true;
+        }
+    }
+
+    if (current_task == task::capture)
+    {
+        // Nothing to do, return and cancel
+        current_task = task::none;
+        nav::clearInstructions();
+    }
+
+    return false;
+}
+
 // Main stay near function
 static bool stayNear()
 {
