@@ -9,6 +9,7 @@
 #include "MiscTemporary.hpp"
 #include "teamroundtimer.hpp"
 #include "flagcontroller.hpp"
+#include "controlpointcontroller.hpp"
 
 namespace hacks::tf2::NavBot
 {
@@ -982,14 +983,11 @@ static bool captureObjectives()
 
     int team       = g_pLocalPlayer->team;
     int enemy_team = g_pLocalPlayer->team == TEAM_BLU ? TEAM_RED : TEAM_BLU;
+
     // Get Flag related information
     auto status   = flagcontroller::getStatus(enemy_team);
     auto position = flagcontroller::getPosition(enemy_team);
     auto carrier  = flagcontroller::getCarrier(enemy_team);
-
-    // Invalid flag
-    if (!position)
-        return false;
 
     // Is the capture task running? If so then wait a bit before repathing
     if (current_task == task::capture)
@@ -999,30 +997,47 @@ static bool captureObjectives()
             return true;
     }
 
-    // Flag is stolen
-    if (status == TF_FLAGINFO_STOLEN)
+    // Invalid flag, run checkpoint logic instead
+    if (!position)
     {
-        // We have the flag, just run to the spawn position of ours to cap
-        if (carrier == LOCAL_E)
+        position = cpcontroller::getClosestControlPoint(LOCAL_E->m_vecOrigin(), team);
+        // Also not a cp map/no points to cap
+        if (!position)
+            return false;
+        if (nav::navTo(*position, 7, true, true))
         {
-            auto our_flag = flagcontroller::getFlag(team);
+            current_task = task::capture;
+            return true;
+        }
+    }
+    // CTF logic
+    else
+    {
+        // Flag is stolen
+        if (status == TF_FLAGINFO_STOLEN)
+        {
+            // We have the flag, just run to the spawn position of ours to cap
+            if (carrier == LOCAL_E)
+            {
+                auto our_flag = flagcontroller::getFlag(team);
 
-            // Navigate
-            if (our_flag.spawn_pos && nav::navTo(*our_flag.spawn_pos, 7, true, false))
+                // Navigate
+                if (our_flag.spawn_pos && nav::navTo(*our_flag.spawn_pos, 7, true, false))
+                {
+                    current_task = task::capture;
+                    return true;
+                }
+            }
+        }
+        // Flag is at their home or dropped
+        else
+        {
+            // Get the flag
+            if (nav::navTo(*position, 7, true, false))
             {
                 current_task = task::capture;
                 return true;
             }
-        }
-    }
-    // Flag is at their home or dropped
-    else
-    {
-        // Get the flag
-        if (nav::navTo(*position, 7, true, false))
-        {
-            current_task = task::capture;
-            return true;
         }
     }
 
