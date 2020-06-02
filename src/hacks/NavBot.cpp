@@ -10,6 +10,7 @@
 #include "teamroundtimer.hpp"
 #include "flagcontroller.hpp"
 #include "controlpointcontroller.hpp"
+#include "payloadcontroller.hpp"
 
 namespace hacks::tf2::NavBot
 {
@@ -975,19 +976,102 @@ static bool stayNearEngineer()
     return false;
 }
 
-// Main Cap function
-static bool captureObjectives()
+static bool CaptureCTF(int team)
 {
     // Only repath every now and then
     static Timer repath_timer;
 
-    int team       = g_pLocalPlayer->team;
-    int enemy_team = g_pLocalPlayer->team == TEAM_BLU ? TEAM_RED : TEAM_BLU;
+    int enemy_team = team == TEAM_BLU ? TEAM_RED : TEAM_BLU;
 
     // Get Flag related information
     auto status   = flagcontroller::getStatus(enemy_team);
     auto position = flagcontroller::getPosition(enemy_team);
     auto carrier  = flagcontroller::getCarrier(enemy_team);
+
+    // Invalid flag
+    if (!position)
+        return false;
+
+    // Flag is stolen
+    if (status == TF_FLAGINFO_STOLEN)
+    {
+        // We have the flag, just run to the spawn position of ours to cap
+        if (carrier == LOCAL_E)
+        {
+            auto our_flag = flagcontroller::getFlag(team);
+
+            // Navigate
+            if (our_flag.spawn_pos && nav::navTo(*our_flag.spawn_pos, 7, true, false))
+            {
+                current_task = task::capture;
+                return true;
+            }
+        }
+    }
+    // Flag is at their home or dropped
+    else
+    {
+        // Get the flag
+        if (nav::navTo(*position, 7, true, false))
+        {
+            current_task = task::capture;
+            return true;
+        }
+    }
+
+    // Failed
+    return false;
+}
+
+static bool CaptureCP(int team)
+{
+    auto position = cpcontroller::getClosestControlPoint(LOCAL_E->m_vecOrigin(), team);
+    // No points found
+    if (!position)
+        return false;
+
+    // Try to navigate
+    if (nav::navTo(*position, 7, true, true))
+    {
+        current_task = task::capture;
+        return true;
+    }
+    // Failed
+    return false;
+}
+static bool CapturePL(int team)
+{
+    auto position = plcontroller::getClosestPayload(LOCAL_E->m_vecOrigin(), team);
+    // No payloads found
+    if (!position)
+        return false;
+
+    // Adjust position so it's not floating high up, provided the local player is close.
+    if (LOCAL_E->m_vecOrigin().DistTo(*position) <= 150.0f)
+        (*position).z = LOCAL_E->m_vecOrigin().z;
+    // If close enough, don't move (mostly due to lifts)
+    if ((*position).DistTo(LOCAL_E->m_vecOrigin()) <= 40.0f)
+    {
+        // Clear navigation if priority is low
+        if (nav::curr_priority <= 7 && current_task != task::capture)
+            nav::clearInstructions();
+        current_task = task::capture;
+        return true;
+    }
+    else if (nav::navTo(*position, 7, true, false))
+    {
+        current_task = task::capture;
+        return true;
+    }
+    // Failed
+    return false;
+}
+
+// Main Cap function
+static bool captureObjectives()
+{
+    // Only repath every now and then
+    static Timer repath_timer;
 
     // Is the capture task running? If so then wait a bit before repathing
     if (current_task == task::capture)
@@ -997,48 +1081,16 @@ static bool captureObjectives()
             return true;
     }
 
-    // Invalid flag, run checkpoint logic instead
-    if (!position)
-    {
-        position = cpcontroller::getClosestControlPoint(LOCAL_E->m_vecOrigin(), team);
-        // Also not a cp map/no points to cap
-        if (!position)
-            return false;
-        if (nav::navTo(*position, 7, true, true))
-        {
-            current_task = task::capture;
-            return true;
-        }
-    }
-    // CTF logic
-    else
-    {
-        // Flag is stolen
-        if (status == TF_FLAGINFO_STOLEN)
-        {
-            // We have the flag, just run to the spawn position of ours to cap
-            if (carrier == LOCAL_E)
-            {
-                auto our_flag = flagcontroller::getFlag(team);
+    int team = g_pLocalPlayer->team;
 
-                // Navigate
-                if (our_flag.spawn_pos && nav::navTo(*our_flag.spawn_pos, 7, true, false))
-                {
-                    current_task = task::capture;
-                    return true;
-                }
-            }
-        }
-        // Flag is at their home or dropped
-        else
-        {
-            // Get the flag
-            if (nav::navTo(*position, 7, true, false))
-            {
-                current_task = task::capture;
-                return true;
-            }
-        }
+    // Try to run the next mode if one fails, if all fail then bail
+    if (!CaptureCTF(team))
+    {
+        if (!CapturePL(team))
+            if (!CaptureCP(team))
+                return false;
+        // Success
+        return true;
     }
 
     if (current_task == task::capture)

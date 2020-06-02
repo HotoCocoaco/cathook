@@ -5,6 +5,7 @@ namespace cpcontroller
 
 std::array<cp_info, MAX_CONTROL_POINTS> controlpoint_data;
 CachedEntity *objective_resource = nullptr;
+bool is_cp                       = true;
 
 // This function updates the Entity used for the Object resource
 void UpdateObjectiveResource()
@@ -17,10 +18,14 @@ void UpdateObjectiveResource()
     {
         CachedEntity *ent = ENTITY(i);
         if (CE_BAD(ent) || ent->m_iClassID() != CL_CLASS(CTFObjectiveResource))
+        {
+            // Not a CP map
+            if (CE_GOOD(ent) && ent->m_iClassID() == CL_CLASS(CFuncTrackTrain))
+                is_cp = false;
             continue;
+        }
         // Found it
         objective_resource = ent;
-        break;
     }
 }
 
@@ -134,7 +139,7 @@ void UpdateControlPoints()
         return;
 
     int num_cp = CE_INT(objective_resource, netvar.m_iNumControlPoints);
-    // No controlpoints
+    // No control points
     if (!num_cp)
         return;
     // Clear the invalid controlpoints
@@ -163,6 +168,12 @@ void UpdateControlPoints()
 // Get the closest controlpoint to cap
 std::optional<Vector> getClosestControlPoint(Vector source, int team)
 {
+    // No resource for it
+    if (CE_BAD(objective_resource))
+        return std::nullopt;
+    // Not a controll point map
+    if (!is_cp)
+        return std::nullopt;
     // Map team to 0-1 and check If Valid
     int team_idx = team - TEAM_RED;
     if (team_idx < 0 || team_idx > 1)
@@ -197,6 +208,7 @@ void LevelInit()
     for (auto &cp : controlpoint_data)
         cp = cp_info();
     objective_resource = nullptr;
+    is_cp              = true;
 }
 
 static InitRoutine init([]() {

@@ -11,8 +11,6 @@ struct cp_info
     std::optional<Vector> position;
     // For BLU and RED to show who can and who cannnot cap
     std::array<bool, 2> can_cap{};
-    // Points needed for capture
-    int points_needed;
     cp_info(){};
 };
 
